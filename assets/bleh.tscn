@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://cjngq6j3m2dhf"]
+
+[ext_resource type="Script" uid="uid://b3ba5wl0u6dn2" path="res://IsoMap25D.gd" id="1_31o5t"]
+
+[node name="IsoMap25D" type="GridMap" unique_id=1756711594]
+script = ExtResource("1_31o5t")
+metadata/_custom_type_script = "uid://b3ba5wl0u6dn2"
+
+[node name="_25D_REAL_GRID" type="GridMap" parent="." unique_id=483996149]

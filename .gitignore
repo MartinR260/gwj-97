@@ -1,0 +1,14 @@
+# Godot 4+ specific ignores
+
+/*
+
+!/src
+!/assets
+!/project.godot
+
+!.editorconfig
+!README.md
+
+!.gitignore
+!.gitattributes
+!.gitkeep
