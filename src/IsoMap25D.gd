@@ -23,6 +23,7 @@ extends GridMap
 
 		mesh_library = MeshLibrary.new()
 		position += Vector3(0, 1, 1) * 0.01 * tile_id
+		position += Vector3(0, -map._mesh_h, -map._mesh_h)
 		# position = Vector3(0, 0, 0)
 		cell_size = map.cell_size
 		map.add_child(self)
@@ -38,6 +39,13 @@ class AutoTileDisplay:
 		_passed[pos] = true
 
 		var mask := 0
+
+		# if _down == Vector3i.UP:
+		# 	if _map._has_id(pos, _tile_id): mask |= 4
+		# 	if _map._has_id(pos + Vector3i.RIGHT, _tile_id): mask |= 8
+		# 	if _map._has_id(pos + _down, _tile_id): mask |= 1
+		# 	if _map._has_id(pos + _down + Vector3i.RIGHT, _tile_id): mask |= 2
+		# else:
 		if _map._has_id(pos, _tile_id): mask |= 1
 		if _map._has_id(pos + Vector3i.RIGHT, _tile_id): mask |= 2
 		if _map._has_id(pos + _down, _tile_id): mask |= 4
@@ -70,19 +78,19 @@ class AutoTileDisplay:
 		var rem_w := _map.tile_size.x - half_w
 		var rem_h := _map.tile_size.y - half_h
 
-		dst.blit_rect(src, Rect2i(
+		dst.blend_rect(src, Rect2i(
 			Vector2i(1 * _map.tile_size.x + half_w, 3 * _map.tile_size.y + half_h) + offset,
 			Vector2i(rem_w, rem_h)
 		), Vector2i(0, 0))
-		dst.blit_rect(src, Rect2i(
+		dst.blend_rect(src, Rect2i(
 			Vector2i(0, half_h) + offset,
 			Vector2i(half_w, rem_h)
 		), Vector2i(rem_w, 0))
-		dst.blit_rect(src, Rect2i(
+		dst.blend_rect(src, Rect2i(
 			Vector2i(half_w, 2 * _map.tile_size.y) + offset,
 			Vector2i(rem_w, half_h)
 		), Vector2i(0, rem_h))
-		dst.blit_rect(src, Rect2i(
+		dst.blend_rect(src, Rect2i(
 			Vector2i(3 * _map.tile_size.x, 3 * _map.tile_size.y) + offset,
 			Vector2i(half_w, half_h)
 		), Vector2i(rem_w, rem_h))
@@ -91,6 +99,7 @@ class AutoTileDisplay:
 		super._init(map, tile_id)
 		_down = Vector3i.DOWN if _map.tiles[tile_id].kind == Tile25D.Kind.WALL else Vector3i.BACK
 		position += Vector3(map._mesh_w / 2, -map._mesh_h, map._mesh_h)
+		# position += Vector3(0, +map._mesh_h / 2, +map._mesh_h / 2)
 
 class SimpleDisplay:
 	extends Display
@@ -106,7 +115,7 @@ class SimpleDisplay:
 		_map._make_display_mesh_item(mesh_library, 0, offset)
 
 	func render_preview(src: Image, dst: Image, offset: Vector2i) -> void:
-		dst.blit_rect(src, Rect2i(offset, _map.tile_size), Vector2i.ZERO)
+		dst.blend_rect(src, Rect2i(offset, _map.tile_size), Vector2i.ZERO)
 
 	func _init(map: IsoMap25D, tile_id: int) -> void:
 		super._init(map, tile_id)
@@ -141,6 +150,11 @@ const _NEIGHBOR_MAP: Dictionary[int, Vector2i] = {
 @export var tile_size := Vector2i(16, 16)
 @export var tiles: Array[Tile25D]
 @export var shader: Shader
+@export var preview: bool:
+	set(value):
+		if value == preview: return
+		preview = value
+		_build()
 
 var _material := ShaderMaterial.new()
 
@@ -221,33 +235,12 @@ func _has_id(pos: Vector3i, id: int) -> bool:
 	assert(false, "recursion too deep")
 	return false
 
-# func _displays -> Array[Display]:
-# 	var res := []
-# 	res.append_array(_auto_tile_displays.values())
-# 	res.append(_simple_layer)
-# 	return res
-# func _get_display(tile_id: int) -> Display:
-# 	var tile := tiles[tile_id]
-# 	match tile.kind:
-# 		Tile25D.Kind.SIMPLE: return _simple_layer
-# 		Tile25D.Kind.FLOOR, Tile25D.Kind.WALL:
-# 			if !(tile_id in _auto_tile_displays):
-# 				print("MAKE GRID FOR ", tile_id)
-# 				_auto_tile_displays[tile_id] = AutoTileDisplay.new(self, tile_id)
-
-# 			return _auto_tile_displays[tile_id]
-
-# 	return null
-
 func _build():
 	for display in _displays: display.free()
 	_displays = []
 
 	if mesh_library == null: mesh_library = MeshLibrary.new()
 	else: mesh_library.clear()
-
-	var tex_img := texture.get_image()
-	tex_img.decompress()
 
 	cell_size = Vector3(_mesh_w, _mesh_h * 2, _mesh_h * 2)
 	# visible = false
@@ -268,24 +261,45 @@ func _build():
 
 		var pos := tile.offset * tile_size
 
-		# Takes the four corners that makes a all-air bordering tile and puts it in one texture
-		# Rather inefficient, but has to be done exactly once, so leave me alone!!
+		display.build(pos)
+
+	var tex_img := texture.get_image()
+	tex_img.decompress()
+
+	for tile_id in len(tiles):
 		var disp_img := Image.create_empty(tile_size.x, tile_size.y, false, tex_img.get_format())
 
-		display.render_preview(tex_img, disp_img, pos)
+		var stack: Array[int] = []
+
+		var iter_id := tile_id
+		for i in 16:
+			if iter_id == INVALID_CELL_ITEM: break
+			if iter_id > tile_id: print("illegal layering at ", tile_id)
+			stack.append(iter_id)
+			iter_id = tiles[iter_id].above
+
+		for i in len(stack):
+			var curr_id := stack[len(stack) - i - 1]
+			var curr_tile := tiles[curr_id]
+			var curr_pos := curr_tile.offset * tile_size
+			_displays[curr_id].render_preview(tex_img, disp_img, curr_pos)
 
 		var disp_tex := ImageTexture.new()
 		disp_tex.set_image(disp_img)
 
+		var material := StandardMaterial3D.new()
+		material.albedo_texture = disp_tex
+		material.uv1_scale = Vector3(3, 2, 1)
+		material.transparency = BaseMaterial3D.Transparency.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+
 		var disp_mesh := BoxMesh.new()
-		disp_mesh.size = Vector3i.ZERO
+		disp_mesh.size = Vector3(self._mesh_w, self._mesh_h, self._mesh_h * 2)
+		disp_mesh.material = material
 
-		var disp_item_id := mesh_library.get_last_unused_item_id()
-		mesh_library.create_item(disp_item_id)
-		mesh_library.set_item_mesh(disp_item_id, disp_mesh)
-		mesh_library.set_item_preview(disp_item_id, disp_tex)
-
-		display.build(pos)
+		mesh_library.create_item(tile_id)
+		if preview: mesh_library.set_item_mesh(tile_id, disp_mesh)
+		mesh_library.set_item_preview(tile_id, disp_tex)
 
 	_bake()
 
@@ -309,6 +323,5 @@ func _process(delta: float) -> void:
 	_bake()
 	pass
 func _ready() -> void:
-	# _simple_layer.owner = get_tree().edited_scene_root
 	_build()
 	_bake()
