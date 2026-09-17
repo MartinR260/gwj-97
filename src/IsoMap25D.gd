@@ -6,6 +6,9 @@ extends GridMap
 @abstract class Display:
 	extends GridMap
 
+	var _map: IsoMap25D
+	var _tile_id: int
+
 	@abstract func bake_reset() -> void
 	@abstract func bake(pos: Vector3i) -> void
 
@@ -14,11 +17,19 @@ extends GridMap
 
 	@abstract func render_preview(src: Image, dst: Image, offset: Vector2i) -> void
 
+	func _init(map: IsoMap25D, tile_id: int) -> void:
+		_map = map
+		_tile_id = tile_id
+
+		mesh_library = MeshLibrary.new()
+		position += Vector3(0, 1, 1) * 0.01 * tile_id
+		# position = Vector3(0, 0, 0)
+		cell_size = map.cell_size
+		map.add_child(self)
+
 class AutoTileDisplay:
 	extends Display
 
-	var _map: IsoMap25D
-	var _tile_id: int
 	var _passed: Dictionary[Vector3i, bool] = {}
 	var _down: Vector3i
 
@@ -77,21 +88,12 @@ class AutoTileDisplay:
 		), Vector2i(rem_w, rem_h))
 
 	func _init(map: IsoMap25D, tile_id: int) -> void:
-		_map = map
-		_tile_id = tile_id
+		super._init(map, tile_id)
 		_down = Vector3i.DOWN if _map.tiles[tile_id].kind == Tile25D.Kind.WALL else Vector3i.BACK
-
-		mesh_library = MeshLibrary.new()
-		position = Vector3(map._mesh_w / 2, -map._mesh_h / 2, map._mesh_h)
-		position += Vector3(0, 1, 1) * 0.01 * tile_id
-		cell_size = Vector3(map._mesh_w, map._mesh_h, map._mesh_h * 2)
-		map.add_child(self)
+		position += Vector3(map._mesh_w / 2, -map._mesh_h, map._mesh_h)
 
 class SimpleDisplay:
 	extends Display
-
-	var _map: IsoMap25D
-	var _tile_id: int
 
 	func bake_reset() -> void:
 		clear()
@@ -107,15 +109,8 @@ class SimpleDisplay:
 		dst.blit_rect(src, Rect2i(offset, _map.tile_size), Vector2i.ZERO)
 
 	func _init(map: IsoMap25D, tile_id: int) -> void:
-		_map = map
-		_tile_id = tile_id
-
-		mesh_library = MeshLibrary.new()
-		position = Vector3(0, 0, map._mesh_h / 2)
-		position += Vector3(0, 1, 1) * 0.01 * tile_id
-		# position = Vector3(0, 0, 0)
-		cell_size = Vector3(map._mesh_w, map._mesh_h, map._mesh_h * 2)
-		map.add_child(self)
+		super._init(map, tile_id)
+		position += Vector3(0, -map._mesh_h / 2, map._mesh_h / 2)
 
 # Maps a mask to its sprite index
 # Bits of the values here are as follows:
@@ -254,7 +249,7 @@ func _build():
 	var tex_img := texture.get_image()
 	tex_img.decompress()
 
-	cell_size = Vector3(_mesh_w, _mesh_h, _mesh_h * 2)
+	cell_size = Vector3(_mesh_w, _mesh_h * 2, _mesh_h * 2)
 	# visible = false
 
 	_material.shader = shader
