@@ -23,9 +23,12 @@ extends GridMap
 
 		mesh_library = MeshLibrary.new()
 		position += Vector3(0, 1, 1) * 0.01 * tile_id
-		position += Vector3(0, -map._mesh_h, -map._mesh_h)
-		# position = Vector3(0, 0, 0)
+		position += Vector3(0, 0, map._mesh_h / 2)
+		position += Vector3(0, -map._mesh_h / 4, -map._mesh_h / 4)
 		cell_size = map.cell_size
+		cell_center_x = false
+		cell_center_y = false
+		cell_center_z = false
 		map.add_child(self)
 
 class AutoTileDisplay:
@@ -73,33 +76,31 @@ class AutoTileDisplay:
 
 	func render_preview(src: Image, dst: Image, offset: Vector2i) -> void:
 		var half_w := _map.tile_size.x >> 1
-		var half_h := _map.tile_size.y >> 1
-
 		var rem_w := _map.tile_size.x - half_w
-		var rem_h := _map.tile_size.y - half_h
+
+		# 3 * _map.tile_size.y + half_h
 
 		dst.blend_rect(src, Rect2i(
-			Vector2i(1 * _map.tile_size.x + half_w, 3 * _map.tile_size.y + half_h) + offset,
-			Vector2i(rem_w, rem_h)
+			Vector2i(1 * _map.tile_size.x + half_w, 0) + offset,
+			Vector2i(rem_w, _map.tile_size.y)
 		), Vector2i(0, 0))
 		dst.blend_rect(src, Rect2i(
-			Vector2i(0, half_h) + offset,
-			Vector2i(half_w, rem_h)
+			Vector2i(3 * _map.tile_size.x, 2 * _map.tile_size.y) + offset,
+			Vector2i(half_w, _map.tile_size.y)
 		), Vector2i(rem_w, 0))
-		dst.blend_rect(src, Rect2i(
-			Vector2i(half_w, 2 * _map.tile_size.y) + offset,
-			Vector2i(rem_w, half_h)
-		), Vector2i(0, rem_h))
-		dst.blend_rect(src, Rect2i(
-			Vector2i(3 * _map.tile_size.x, 3 * _map.tile_size.y) + offset,
-			Vector2i(half_w, half_h)
-		), Vector2i(rem_w, rem_h))
 
 	func _init(map: IsoMap25D, tile_id: int) -> void:
 		super._init(map, tile_id)
-		_down = Vector3i.DOWN if _map.tiles[tile_id].kind == Tile25D.Kind.WALL else Vector3i.BACK
-		position += Vector3(map._mesh_w / 2, -map._mesh_h, map._mesh_h)
-		# position += Vector3(0, +map._mesh_h / 2, +map._mesh_h / 2)
+
+		position += Vector3(map._mesh_w / 2, -map._mesh_h / 2, 0)
+
+		match _map.tiles[tile_id].kind:
+			Tile25D.Kind.WALL:
+				_down = Vector3i.DOWN
+				position += Vector3(0, -map._mesh_h / 2, -map._mesh_h / 2)
+			Tile25D.Kind.FLOOR:
+				_down = Vector3i.BACK
+
 
 class SimpleDisplay:
 	extends Display
@@ -119,7 +120,7 @@ class SimpleDisplay:
 
 	func _init(map: IsoMap25D, tile_id: int) -> void:
 		super._init(map, tile_id)
-		position += Vector3(0, -map._mesh_h / 2, map._mesh_h / 2)
+		position += Vector3(0, -map._mesh_h / 4, -map._mesh_h / 4)
 
 # Maps a mask to its sprite index
 # Bits of the values here are as follows:
@@ -172,8 +173,9 @@ var _mesh_w: float:
 		else: return 1
 var _mesh_h: float:
 	get:
-		if _ratio < 1: return 0.7071067811865475
-		else: return _ratio * 0.7071067811865475
+		if _ratio < 1: return 1.414213562373095
+		else: return _ratio * 1.414213562373095
+
 
 var _displays: Array[Display] = []
 # var _auto_tile_displays: Dictionary[int, AutoTileDisplay] = {}
@@ -192,12 +194,14 @@ func _make_display_mesh_item(lib: MeshLibrary, slot: int, offset: Vector2i) -> v
 	var uva := Vector2(offset) / Vector2(texture.get_size())
 	var uvs := Vector2(tile_size) / Vector2(texture.get_size())
 
+	var vs := Vector3(_mesh_w, _mesh_h / 2, _mesh_h / 2)
+
 	arr_mesh[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2, 3, 0, 2])
 	arr_mesh[Mesh.ARRAY_VERTEX] = PackedVector3Array([
-		Vector3(-self._mesh_w / 2, self._mesh_h / 2, -self._mesh_h / 2),
-		Vector3(self._mesh_w / 2, self._mesh_h / 2, -self._mesh_h / 2),
-		Vector3(self._mesh_w / 2, -self._mesh_h / 2, self._mesh_h / 2),
-		Vector3(-self._mesh_w / 2, -self._mesh_h / 2, self._mesh_h / 2)
+		Vector3(0, 1, 0) * vs,
+		Vector3(1, 1, 0) * vs,
+		Vector3(1, 0, 1) * vs,
+		Vector3(0, 0, 1) * vs,
 	])
 	arr_mesh[Mesh.ARRAY_TEX_UV] = PackedVector2Array([
 		# Vector2(0, 1) * uvs + uva,
@@ -214,13 +218,13 @@ func _make_display_mesh_item(lib: MeshLibrary, slot: int, offset: Vector2i) -> v
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr_mesh)
 	mesh.surface_set_material(0, _material)
 
-	var preview := AtlasTexture.new()
-	preview.atlas = texture
-	preview.region = Rect2(offset, tile_size)
+	var prev_tex := AtlasTexture.new()
+	prev_tex.atlas = texture
+	prev_tex.region = Rect2(offset, tile_size)
 
 	lib.create_item(slot)
 	lib.set_item_mesh(slot, mesh)
-	lib.set_item_preview(slot, preview)
+	lib.set_item_preview(slot, prev_tex)
 	# self.mesh_library.set_item_shapes(disp_item_id, [BoxShape3D.new(), Transform3D.IDENTITY.scaled(cell_size)])
 
 func _has_id(pos: Vector3i, id: int) -> bool:
@@ -242,7 +246,7 @@ func _build():
 	if mesh_library == null: mesh_library = MeshLibrary.new()
 	else: mesh_library.clear()
 
-	cell_size = Vector3(_mesh_w, _mesh_h * 2, _mesh_h * 2)
+	cell_size = Vector3(_mesh_w, _mesh_h, _mesh_h)
 	# visible = false
 
 	_material.shader = shader
@@ -294,7 +298,7 @@ func _build():
 		material.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 
 		var disp_mesh := BoxMesh.new()
-		disp_mesh.size = Vector3(self._mesh_w, self._mesh_h, self._mesh_h * 2)
+		disp_mesh.size = Vector3(_mesh_w, _mesh_h, _mesh_h)
 		disp_mesh.material = material
 
 		mesh_library.create_item(tile_id)
